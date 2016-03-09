@@ -1,0 +1,8 @@
+# 2016 
+
+Android四大基本组件分别是Activity，Service服务,Content Provider内容提供者，BroadcastReceiver广播接收器。  
+
+当Intent在组件间传递时，组件如果想告知Android系统自己能够响应和处理哪些Intent，那么就需要用到IntentFilter对象。  
+
+ 顾名思义，IntentFilter对象负责过滤掉组件无法响应和处理的Intent，只将自己关心的Intent接收进来进行处理。 IntentFilter实行“白名单”管理，即只列出组件乐意接受的Intent，但IntentFilter只会过滤隐式Intent，显式的Intent会直接传送到目标组件。 Android组件可以有一个或多个IntentFilter，每个IntentFilter之间相互独立，只需要其中一个验证通过则可。除了用于过滤广播的IntentFilter可以在代码中创建外，其他的IntentFilter必须在AndroidManifest.xml文件中进行声明。  
+ 
