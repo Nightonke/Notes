@@ -1,5 +1,5 @@
 # Notes
-Keep foolish, keep hungry.
+###Someone has to win. Why not be me?
 
 This repository is for collecting notes and pushing me forward.  
 1. **DO NOT** reprint any article here. Because I don't own the authority of some sentences or articles here.  
