@@ -1,0 +1,15 @@
+#2016-05-28
+
+###[Diff in OS X and iOS](http://stackoverflow.com/questions/6553305/difference-between-iphone-development-and-mac-osx-development)
+
+### Android 横竖屏切换
+[Article1](http://892848153.iteye.com/blog/1716344)
+
+### [Objective-C的一些优点和缺点](http://blog.csdn.net/chenyufeng1991/article/details/49097459)
+
+### [What is Cocoa?](https://zh.wikipedia.org/wiki/Cocoa)
+
+### Questions
+#####为什么iOS使用标记清除的GC算法而Android使用复制－清除的GC算法？
+##### Diff of \_\_bridge, \_\_bridge\_retained and \_\_bridge\_transfer?
+
