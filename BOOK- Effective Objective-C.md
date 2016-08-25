@@ -44,16 +44,16 @@
 	7. [用“僵尸对象”调试内存管理问题]()
 	8. [不要使用retainCount]()
 6. [块与大中枢派发]()
-	1. []()
-	2. []()
-	3. []()
-	4. []()
-	5. []()
-	6. []()
-	7. []()
-	8. []()
-	9. []()
-	10. []()
+	1. [理解“块”这一概念]()
+	2. [为常用的块类型创建typedef]()
+	3. [用handler块降低代码分散程度]()
+	4. [用块引用其所属对象时不要出现保留环]()
+	5. [多用派发队列，少用同步锁]()
+	6. [多用GCD，少用performSelector系列方法]()
+	7. [掌握GCD及操作队列使用时机]()
+	8. [通过Dispatch Group机制，根据系统资源状况来执行任务]()
+	9. [使用dispatch_once来执行只需运行一次线程安全代码]()
+	10. [不要使用dispatchgetcurrent_queue]()
 7. [系统框架]()
 
 ##熟悉Objective-C
@@ -635,7 +635,9 @@ _syncQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
 ###使用dispatch_once来执行只需运行一次线程安全代码
 
 ###不要使用dispatch_get_current_queue
-
+```
+// 还没写完
+```
 
 
 
