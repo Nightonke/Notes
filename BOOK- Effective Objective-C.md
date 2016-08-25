@@ -53,8 +53,14 @@
 	7. [掌握GCD及操作队列使用时机]()
 	8. [通过Dispatch Group机制，根据系统资源状况来执行任务]()
 	9. [使用dispatch_once来执行只需运行一次线程安全代码]()
-	10. [不要使用dispatchgetcurrent_queue]()
+	10. [不要使用dispatch_get_current_queue]()
 7. [系统框架]()
+	1. [熟悉系统框架]()
+	2. [多用块枚举，少用for循环]()
+	3. [对自定义其内存管理语义的collection使用无缝桥接]()
+	4. [构建缓存时选用NSCache而非NSDictionary]()
+	5. [精简initialize与load的代码]()
+	6. [别忘了NSTimer会保留其目标对象]()
 
 ##熟悉Objective-C
 ###了解Objective-C语言的起源
@@ -634,11 +640,206 @@ _syncQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
 
 ###使用dispatch_once来执行只需运行一次线程安全代码
 
-###不要使用dispatch_get_current_queue
+###不要使用dispatch\_get\_current_queue
 ```
-// 还没写完
+- (NSString *)someString
+{
+	__block NSString *localSomeString;
+	dispatch_sync(_syncQueue, ^{
+		localSomeString = _someString;
+	});
+	return localSomeString;
+}
+
+- (void)setSomeString:(NSString *)someString
+{
+	dispatch_async(_syncQueue, ^{
+		_someString = someString;
+	});
+}
+
+```
+这种写法有个问题，获取方法可能会死锁，加入调用获取方法的队列恰好是同步操作所针对的队列（在此为_syncQueue），那么dispatch_sync就会一直等待不返回，直到块执行完毕。但是应该执行块的目标队列却是当前队列，而当前队列的dispatch_sync又一直阻塞，因为它在等待目标队列将块执行完毕。这样就会导致块永远无法执行。代码中someString方法是“不可重入的”。
+看了dispatch_get_current_queue的文档之后，我们可以监测当前队列是否为同步操作所针对的队列：
+
+```
+- (NSString *)someString
+{
+	__block NSString *localSomeString;
+	dispatch_block_t accessorBlock = ^{
+		localSomeString = _someString;
+	}
+	if (dispatch_get_current_queue() == _syncQueue)
+	{
+		accessorblock();
+	}
+	else
+	{
+		dispatch_sync(_syncQueue, accessorBlock);
+	}
+	return localSomeString;
+}
+```
+但其实仍然不保险：
+  
+```
+dispatch_queue_t queueA = dispatch_queue_create("com.effectivec.queueA", NULL);
+dispatch_queue_t queueB = dispatch_queue_create("com.effectivec.queueB", NULL);
+
+dispatch_sync(queueA, ^{
+	dispatch_sync(queueB, ^{
+		dispatch_sync(queueA, ^{
+			// deadlock
+		});
+	})
+});
+```
+就算用dispatch_get_current_queue：
+
+```
+dispatch_sync(queueA, ^{
+	dispatch_sync(queueB, ^{
+		dispatch_block_t block = ^{};
+		if (dispatch_get_current_queue() == queueA)
+		{
+			block();
+		}
+		else
+		{
+			dispatch_sync(queueA, queueA);
+		}
+	})
+});
+```
+也是死锁。  
+正确的做法是，不要将存取方法弄成可重入的，而是应该确保同步操作所用的队列绝不会访问属性，也就是绝对不会调用someString方法。这种队列只应该用来同步属性。派发队列是非常轻量级的机制，不必太担心性能问题。
+
+![](https://1.bp.blogspot.com/-cH8QFS4Gm1M/V75gd8_zcqI/AAAAAAAAAMM/0BgizNeuYDYuEz0sn6l5n8Q8xNtCmGuXQCLcB/s1600/E1652CA3-0F7C-4756-AEAA-497C33E65FFD.png)
+
+队列之间会形成一套层级体系，这意味着排在某条队列中的块，会在其上级队列（parent queue，父队列）里执行。层级里地位最高的那个队列总是“全局并发队列”。由于队列之间有层级关系，所以“检查当前队列是否为执行同步派发所用的队列”并不奏效。  
+有的API可令开发者指定运行回调快时所用的队列，但实际上却会把回调块安排在内部的串行同步队列上，而内部队列的目标队列又是开发者提供的队列，就会发生死锁。使用API的开发者可能会以为：在回调块里调用dispatch_get_current_queue所返回的当前队列，是其调用API的队列，但实际上有可能是API内部的同步队列。  
+要解决这个问题，最好的办法就是通过GCD所提供的功能来设定“队列特有数据”（queue-specific data），此功能可以把任意数据以键值对的形式关联到队列中。最重要之处在于，加入根据指定的键获取不到关联数据，那么系统会沿着层级向上查找：
+
+```
+dispatch_queue_t queueA = dispatch_queue_create("com.effectivec.queueA", NULL);
+dispatch_queue_t queueB = dispatch_queue_create("com.effectivec.queueB", NULL);
+dispatch_set_target_queue(queueB, queueA);
+
+static int kQueueSpecificl
+CGStringRef queueSpecificValue = CGSTR("queueA");
+dispatch_queue_set_specific(queueA, &kQueueSpecific, (void *)queueSpecificValue, (dispatch_function_t)CGRelease);
+
+dispatch_sync(queueB, ^{
+	dispatch_block_t block = ^{};
+	CGStringRef retrievedValue = dispatch_get_specific(&kQueueSpecific);
+	if (retrievedValue)
+	{
+		block();
+	}
+	else
+	{
+		dispatch_sync(queueA, block);
+	}
+});
+```
+对于键来说，要注意：函数是按照指针值来比较键的，类似于“关联引用”中的键值机制。
+
+##系统框架
+###熟悉系统框架
+1. 将一系列代码封装为动态库，并在其中放入描述接口的头文件，就叫做框架。为iOS平台构建的第三方框架所使用的是静态库，因为iOS应用程序不允许包含动态库。所有的iOS平台的系统框架都使用动态库。
+
+###多用块枚举，少用for循环
+```
+NSArray *anArray = /*...*/;
+[anArray enumerateObjectsUsingBlock:^(id object, NSUInteger idx, BOOL *stop) {
+	// do something for object
+	if (shouldStop)
+	{
+		*stop = YES;
+	}
+}
+```
+```
+NSArray *anArray = /*...*/;
+[anArray enumerateObjectsWithOptions:(NSEnumerationOptions)options 
+                          usingBlock:^(id object, NSUInteger idx, BOOL *stop) {
+	// do something for object
+	if (shouldStop)
+	{
+		*stop = YES;
+	}
+}
 ```
 
+###对自定义其内存管理语义的collection使用无缝桥接
+使用无缝桥接技术，可以在定义于Foundation框架中的Objective-C类和定义于CoreFoundation框架中的C数据结构互相转化。
+	
+	```
+	NSArray *anArray = @[@1, @2, @3];
+	CGArrayRef aCFArray = (__bridge CGArrayRef)anNSArray;
+	NSLog(@"Size of array = %li", CGArrayGetCount(aCFArray));
+	```
+转换操作中的__bridge告诉ARC如何处理转换所涉及的Objective-C对象。__bridge本身的意思是：ARC仍然具备这个Objective-C对象的所有权。而__bridge_retained则相反，意味着ARC将交出对象的所有权。若是前面那段代码改用它来实现，那么用完数据之后就要加上CGRelease（aCGArray）以释放其内存。类似的，反向可以通过__bridge_transfer来实现，比如，将CGArrayRef转换为NSArray*，并且想令ARC获得对象所有权，那么就可以采用这种转换方式。
 
+###构建缓存时选用NSCache而非NSDictionary
+1. NSCache胜过NSDictionary之处在于，在系统资源将要耗尽之时，可以自动删减缓存。其策略是LRU（lease recently used）。NSCache并不拷贝键，而是保留键。
+2. 开发者可以操控缓存删减其内容的时机，有两个于系统资源相关的尺度可供调整。一个是缓存中的对象总数，一个是所有对象的“总开销”。开发者在将对象加入缓存时，可为其指定“开销值”。当对象总数或总开销超过上限时，缓存就可能会删减其中的对象。但要注意，只是可能，具体删除那个值，没有办法控制。
+3. 将NSPurgeableData与NSCache搭配使用，可实现自动清除数据的功能，当NSPurgeableData对象所占内存为系统丢失时，该对象本身也会从缓存中移除。
 
+###精简initialize与load的代码
+1. load方法的问题在于，执行该方法时，运行期系统处于“脆弱状态”（fragile state）。在执行子类的load方法之时，必定会执行所有超类的load方法，如果类依赖了其他类，那么其他类也会因此先执行load。然而，我们无法通过类的依赖关系来判断各个类的载入顺序。所以，在load方法中使用其他类是不安全的做法。
+2. load方法并不遵循普通方法的规则。如果某个类本身没有实现load方法，不管各级超类是否实现了load方法，这些load方法并不会被调用。类和分类之中都有可能出现load方法，此时两种类方法都会被调用，类的实现比分类的load方法先执行。
+3. load方法中做最少的事。
 
+1. initialize方法会在程序首次用该类之前调用，且只会调用一次。它是运行期系统调用的，绝不可用代码调用。
+2. initialize方法是惰性调用的，在系统第一次用到某个类的时候，才会调用这个类的initialize方法。
+3. initialize方法一定会在线程安全的环境中执行，也就是，只有某个线程可以执行initialize方法，其他的线程必须阻塞等待。
+4. initialize方法和其他消息一样，如果某个类没有实现，且其超类实现了，那么就会运行超类的initialize方法。
+	
+	```
+	#import "Foundation/Foundation.h"
+	
+	@interface EOCBaseClass : NSObject
+	@end
+	
+	@implementation EOCBaseClass
+	
+	+ (void)initialize
+	{
+	    NSLog(@"%@ initialize", self);
+	}
+	
+	@end
+	
+	@interface EOCSubClass : EOCBaseClass
+	@end
+	
+	@implementation EOCSubClass
+	@end
+	```
+	当第一次使用累EOCSubClass的时候，会输出：
+	
+	```
+	EOCBaseClass initialize
+	EOCSubClass initialize
+	```
+	当初始化类EOCSubClass时，基类也要进行初始化，输出了```EOCBaseClass initialize```；随后因为子类并没有实现initialize方法，要将父类的方法实现。通常会这样实现initialize方法：
+	
+	```
+	+ (void)initialize
+	{
+		if (self == [EOCBaseClass class])
+		{
+			NSLog(@"%@ initialized", self);
+		}
+	}
+	```
+	此时只会输出：
+	
+	```
+	EOCBaseClass initialized
+	```
+5. initialize方法只应该用来设置内部数据，不应该调用其他方法，哪怕是本类自己的方法。
+
+###别忘了NSTimer会保留其目标对象
+1. 计时器会保留目标对象，直到自身“失效”才会将其释放。可以通过调用invalidate方法来使其失效，或者等待执行完相关任务后其自动失效。
